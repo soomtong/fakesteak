@@ -1,0 +1,54 @@
+name: release
+
+# Build a static Linux x86_64 binary and attach it to a GitHub release
+# whenever a version tag (v*) is pushed.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (static, stripped)
+        run: |
+          make CFLAGS="-Wall -O3 -static"
+          strip bin/fakesteak
+          file bin/fakesteak
+          ./bin/fakesteak --help
+
+      - name: Package
+        run: |
+          NAME=fakesteak-linux-x86_64
+          mkdir -p dist/$NAME
+          cp bin/fakesteak LICENSE README.md dist/$NAME/
+          tar -C dist -czf dist/$NAME.tar.gz $NAME
+          cd dist
+          sha256sum $NAME.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fakesteak-linux-x86_64
+          path: |
+            dist/fakesteak-linux-x86_64.tar.gz
+            dist/SHA256SUMS
+
+      - name: Create release and upload assets
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            dist/fakesteak-linux-x86_64.tar.gz dist/SHA256SUMS \
+            --title "fakesteak $TAG (Linux x86_64)" \
+            --notes "Prebuilt static binary for Linux x86_64. Extract and run \`./fakesteak\`; verify with SHA256SUMS."
